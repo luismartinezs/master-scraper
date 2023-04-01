@@ -5,52 +5,54 @@ const puppeteer = require('puppeteer');
 
 const MAX_WORDS_PER_FILE = 2000;
 
-if (process.argv.length < 3) {
-  console.error('Usage: node scrape.js <url>');
-  process.exit(1);
+function validateArguments() {
+  if (process.argv.length < 3) {
+    console.error('Usage: node scrape.js <url>');
+    process.exit(1);
+  }
 }
 
-const url = process.argv[2];
-
-(async () => {
-  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-  const page = await browser.newPage();
-  await page.goto(url);
-
+async function getMainElement(page) {
   let mainElement = await page.$('main');
 
   if (!mainElement) {
     console.warn('Warning: "main" element not found on the page. Using "body" element instead.');
-    mainElement = await page.$('body');
+    return page.$('body');
   }
+  return mainElement;
+}
 
-  const mainText = await mainElement.evaluate((element) => {
-    // Remove all <style>, <script>, and <noscript> elements from the main content
-    ['style', 'script', 'noscript'].forEach((tag) => {
-      Array.from(element.querySelectorAll(tag)).forEach((elem) => {
-        elem.remove();
-      });
+async function cleanElement(element) {
+  // Remove all <style>, <script>, and <noscript> elements from the main content
+  ['style', 'script', 'noscript'].forEach((tag) => {
+    Array.from(element.querySelectorAll(tag)).forEach((elem) => {
+      elem.remove();
     });
-
-    // Split the text content into lines and filter out unwanted lines
-    const lines = element.textContent.split('\n');
-    const filteredLines = lines.filter(line => {
-      // Check if the line contains an unwanted pattern (e.g., "Advertisement")
-      const unwantedPatterns = [/Advertisement/];
-      return !unwantedPatterns.some(pattern => pattern.test(line));
-    });
-
-    return filteredLines.join('\n');
   });
 
+  // Filter out <header>, <footer>, and <aside> elements if they are direct children of the <body> element
+  if (element.tagName.toLowerCase() === 'body') {
+    ['header', 'footer', 'aside'].forEach((tag) => {
+      Array.from(element.children).forEach((child) => {
+        if (child.tagName.toLowerCase() === tag) {
+          child.remove();
+        }
+      });
+    });
+  }
 
-  const words = mainText.split(/\s+/);
+  // Split the text content into lines and filter out unwanted lines
+  const lines = element.textContent.split('\n');
+  const filteredLines = lines.filter(line => {
+    // Check if the line contains an unwanted pattern (e.g., "Advertisement")
+    const unwantedPatterns = [/Advertisement/];
+    return !unwantedPatterns.some(pattern => pattern.test(line));
+  });
 
-  const slugifiedUrl = slug(url);
-  const timestamp = DateTime.now().toFormat('yyyyMMdd-HHmmss');
-  const folderName = `output/${slugifiedUrl}/${timestamp}`;
-  fs.mkdirSync(folderName, { recursive: true });
+  return filteredLines.join('\n');
+}
 
+async function saveWordsToFiles(words, folderName, slugifiedUrl) {
   let fileCounter = 1;
   while (words.length > 0) {
     const fileWords = words.splice(0, MAX_WORDS_PER_FILE);
@@ -60,6 +62,27 @@ const url = process.argv[2];
     console.log(`Written ${fileWords.length} words to ${fileName}`);
     fileCounter++;
   }
+}
 
+const url = process.argv[2];
+
+(async () => {
+  validateArguments()
+
+  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+  const page = await browser.newPage();
+  await page.goto(url);
+
+  const mainElement = await getMainElement(page)
+  const mainText = await mainElement.evaluate(cleanElement);
+
+  const words = mainText.split(/\s+/);
+
+  const slugifiedUrl = slug(url);
+  const timestamp = DateTime.now().toFormat('yyyyMMdd-HHmmss');
+  const folderName = `output/${slugifiedUrl}/${timestamp}`;
+
+  fs.mkdirSync(folderName, { recursive: true });
+  await saveWordsToFiles(words, folderName, slugifiedUrl);
   await browser.close();
 })();
