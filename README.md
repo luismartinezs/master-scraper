@@ -1,0 +1,1 @@
+Sometimes the script does not finish execution for some reason, just `ctrl + C` it if it happens
