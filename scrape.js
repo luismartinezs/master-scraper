@@ -13,7 +13,7 @@ if (process.argv.length < 3) {
 const url = process.argv[2];
 
 (async () => {
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
   const page = await browser.newPage();
   await page.goto(url);
 
@@ -24,7 +24,25 @@ const url = process.argv[2];
     mainElement = await page.$('body');
   }
 
-  const mainText = await mainElement.evaluate((element) => element.textContent);
+  const mainText = await mainElement.evaluate((element) => {
+    // Remove all <style>, <script>, and <noscript> elements from the main content
+    ['style', 'script', 'noscript'].forEach((tag) => {
+      Array.from(element.querySelectorAll(tag)).forEach((elem) => {
+        elem.remove();
+      });
+    });
+
+    // Split the text content into lines and filter out unwanted lines
+    const lines = element.textContent.split('\n');
+    const filteredLines = lines.filter(line => {
+      // Check if the line contains an unwanted pattern (e.g., "Advertisement")
+      const unwantedPatterns = [/Advertisement/];
+      return !unwantedPatterns.some(pattern => pattern.test(line));
+    });
+
+    return filteredLines.join('\n');
+  });
+
 
   const words = mainText.split(/\s+/);
 
