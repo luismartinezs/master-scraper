@@ -49,7 +49,8 @@ async function cleanElement(element) {
     return !unwantedPatterns.some(pattern => pattern.test(line));
   });
 
-  return filteredLines.join('\n');
+  const cleanedLines = filteredLines.map(line => line.trim().replace(/\s{2,}/g, ' ')).filter(line => line.match(/\w/))
+  return cleanedLines;
 }
 
 async function saveWordsToFiles(words, folderName, slugifiedUrl) {
@@ -74,9 +75,12 @@ const url = process.argv[2];
   await page.goto(url);
 
   const mainElement = await getMainElement(page)
-  const mainText = await mainElement.evaluate(cleanElement);
+  const cleanedLines = await mainElement.evaluate(cleanElement);
 
-  const words = mainText.split(/\s+/);
+  let joinedText = cleanedLines.join('. ');
+  joinedText = joinedText.replace(/(\. ){2,}/g, '. ');
+
+  const words = joinedText.split(/\s+/);
 
   const slugifiedUrl = slug(url);
   const timestamp = DateTime.now().toFormat('yyyyMMdd-HHmmss');
